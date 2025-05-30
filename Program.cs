@@ -12,6 +12,8 @@ class Program
         registry.RegisterCommand(new ExitCommand());
         registry.RegisterCommand(new EchoCommand());
         registry.RegisterCommand(new TypeCommand(registry));
+        registry.RegisterCommand(new PwdCommand());
+        registry.RegisterCommand(new CdCommand());
 
         while (true)
         {
