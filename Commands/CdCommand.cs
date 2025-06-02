@@ -42,7 +42,7 @@ public class CdCommand : ICommand
             }
 
             Environment.CurrentDirectory = targetDirectory;
-        }
+        } 
         catch (Exception ex)
         {
             errorOutput.WriteLine($"Error changing directory: {ex.Message}");
