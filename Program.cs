@@ -43,6 +43,7 @@ class Program
         var args = new List<string>();
         var currentArg = new StringBuilder();
         bool inSingleQuotes = false;
+        bool inDoubleQuotes = false;
 
         for (int i = 0; i < input.Length; i++)
         {
@@ -52,18 +53,33 @@ class Program
             {
                 if (c == '\'')
                 {
-                    // Check if the next char starts a new quoted section without whitespace
-                    int next = i + 1;
-                    if (next < input.Length && input[next] == '\'')
+                    inSingleQuotes = false;
+                }
+                else
+                {
+                    currentArg.Append(c);
+                }
+            }
+            else if (inDoubleQuotes)
+            {
+                if (c == '"')
+                {
+                    inDoubleQuotes = false;
+                }
+                else if (c == '\\' && i + 1 < input.Length)
+                {
+                    char next = input[i + 1];
+                    if (next == '$' || next == '`' || next == '"' || next == '\\' || next == '\n')
                     {
-                        // Escaped single quote (two single quotes in a row)
-                        //currentArg.Append('\'');
-                        i++;
+                        currentArg.Append(next);
+                        i++; // skip escaped character
                     }
                     else
                     {
-                        inSingleQuotes = false;
-                        // Do NOT add currentArg to args yet — may be concatenated
+                        // backslash before other chars is kept
+                        currentArg.Append(c);
+                        currentArg.Append(next);
+                        i++;
                     }
                 }
                 else
@@ -73,17 +89,34 @@ class Program
             }
             else
             {
-                if (c == '\'')
-                {
-                    inSingleQuotes = true;
-                    // If currentArg has content, stay in it — we're likely concatenating
-                }
-                else if (char.IsWhiteSpace(c))
+                if (char.IsWhiteSpace(c))
                 {
                     if (currentArg.Length > 0)
                     {
                         args.Add(currentArg.ToString());
                         currentArg.Clear();
+                    }
+                }
+                else if (c == '\'')
+                {
+                    inSingleQuotes = true;
+                }
+                else if (c == '"')
+                {
+                    inDoubleQuotes = true;
+                }
+                else if (c == '\\' && i + 1 < input.Length)
+                {
+                    char next = input[i + 1];
+
+                    if (next == '\n')
+                    {
+                        i++; // skip newline
+                    }
+                    else
+                    {
+                        currentArg.Append(next);
+                        i++; // skip escaped character
                     }
                 }
                 else
@@ -99,7 +132,8 @@ class Program
         }
 
         string commandName = args.Count > 0 ? args[0] : string.Empty;
-        string[] cmdArgs = args.Count > 1 ? [.. args.GetRange(1, args.Count - 1)] : [];
+        string[] cmdArgs = args.Count > 1 ? args.GetRange(1, args.Count - 1).ToArray() : [];
+
         return (commandName, cmdArgs);
     }
 
