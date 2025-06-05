@@ -9,18 +9,21 @@ public static class ProcessRunner
     {
         try
         {
-            var process = new Process
+            var startInfo = new ProcessStartInfo
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = path,
-                    Arguments = string.Join(" ", arguments),
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
+                FileName = path,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
             };
+
+            foreach (var arg in arguments)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+
+            var process = new Process { StartInfo = startInfo };
 
             process.Start();
             string output = await process.StandardOutput.ReadToEndAsync();
@@ -31,7 +34,6 @@ public static class ProcessRunner
         }
         catch (Exception ex)
         {
-            // Handle exceptions such as file not found or access denied
             return (string.Empty, ex.Message, -1);
         }
     }
