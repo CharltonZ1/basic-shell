@@ -24,12 +24,44 @@ class Program
                 continue;
 
             input = input.Trim();
-            var (commandName, cmdArgs) = ParseInput(input);
+            var (commandName, cmdArgs, redirects) = ParseInput(input);
 
             ICommand? command = registry.GetCommand(commandName);
             if (command != null)
             {
-                await command.ExecuteAsync(cmdArgs, Console.Out, Console.Error);
+                TextWriter stdout = Console.Out;
+                TextWriter stderr = Console.Error;
+
+                StreamWriter? outFile = null;
+                StreamWriter? errFile = null;
+
+                try
+                {
+                    if (redirects.TryGetValue(1, out var stdoutRedir))
+                    {
+                        outFile = new StreamWriter(stdoutRedir.Path, append: stdoutRedir.Append)
+                        {
+                            AutoFlush = true
+                        };
+                        stdout = outFile;
+                    }
+
+                    if (redirects.TryGetValue(2, out var stderrRedir))
+                    {
+                        errFile = new StreamWriter(stderrRedir.Path, append: stderrRedir.Append)
+                        {
+                            AutoFlush = true
+                        };
+                        stderr = errFile;
+                    }
+
+                    await command.ExecuteAsync(cmdArgs, stdout, stderr);
+                }
+                finally
+                {
+                    outFile?.Dispose();
+                    errFile?.Dispose();
+                }
             }
             else
             {
@@ -38,10 +70,12 @@ class Program
         }
     }
 
-    private static (string CommandName, string[] Arguments) ParseInput(string input)
+    private static (string CommandName, string[] Arguments, Dictionary<int, (string Path, bool Append)> Redirects) ParseInput(string input)
     {
         var args = new List<string>();
+        var redirects = new Dictionary<int, (string Path, bool Append)>();
         var currentArg = new StringBuilder();
+
         bool inSingleQuotes = false;
         bool inDoubleQuotes = false;
 
@@ -52,33 +86,25 @@ class Program
             if (inSingleQuotes)
             {
                 if (c == '\'')
-                {
                     inSingleQuotes = false;
-                }
                 else
-                {
                     currentArg.Append(c);
-                }
             }
             else if (inDoubleQuotes)
             {
                 if (c == '"')
-                {
                     inDoubleQuotes = false;
-                }
                 else if (c == '\\' && i + 1 < input.Length)
                 {
                     char next = input[i + 1];
-                    if (next == '$' || next == '`' || next == '"' || next == '\\' || next == '\n')
+                    if (next is '$' or '`' or '"' or '\\' or '\n')
                     {
                         currentArg.Append(next);
-                        i++; // skip escaped character
+                        i++;
                     }
                     else
                     {
-                        // backslash before other chars is kept
-                        currentArg.Append(c);
-                        currentArg.Append(next);
+                        currentArg.Append(c).Append(next);
                         i++;
                     }
                 }
@@ -107,17 +133,55 @@ class Program
                 }
                 else if (c == '\\' && i + 1 < input.Length)
                 {
-                    char next = input[i + 1];
-
-                    if (next == '\n')
+                    if (input[i + 1] == '\n')
                     {
-                        i++; // skip newline
+                        i++; // line continuation
                     }
                     else
                     {
-                        currentArg.Append(next);
-                        i++; // skip escaped character
+                        currentArg.Append(input[++i]);
                     }
+                }
+                else if ((c == '>' || c == '<') && currentArg.Length <= 1)
+                {
+
+                    bool isAppend = false;
+
+                    if (c == '>' && i + 1 < input.Length && input[i + 1] == '>')
+                    {
+                        isAppend = true;
+                        i++; // consume second >
+                    }
+
+                    // Handle redirection operators: >, 1>, 2>
+                    int fd = 1; // default to stdout
+                    if (currentArg.Length == 1 && char.IsDigit(currentArg[0]))
+                    {
+                        fd = currentArg[0] - '0';
+                        currentArg.Clear();
+                    }
+
+                    // skip current '>' or '<'
+                    i++;
+                    while (i < input.Length && char.IsWhiteSpace(input[i])) i++; // skip whitespace
+
+                    var filename = new StringBuilder();
+                    //bool quoted = false;
+                    if (i < input.Length && (input[i] == '"' || input[i] == '\''))
+                    {
+                        //quoted = true;
+                        char quoteType = input[i++];
+                        while (i < input.Length && input[i] != quoteType)
+                            filename.Append(input[i++]);
+                    }
+                    else
+                    {
+                        while (i < input.Length && !char.IsWhiteSpace(input[i]))
+                            filename.Append(input[i++]);
+                        i--; // step back to balance next loop increment
+                    }
+
+                    redirects[fd] = (filename.ToString(), isAppend);
                 }
                 else
                 {
@@ -127,14 +191,13 @@ class Program
         }
 
         if (currentArg.Length > 0)
-        {
             args.Add(currentArg.ToString());
-        }
 
         string commandName = args.Count > 0 ? args[0] : string.Empty;
-        string[] cmdArgs = args.Count > 1 ? args.GetRange(1, args.Count - 1).ToArray() : [];
+        string[] cmdArgs = args.Count > 1 ? [.. args.GetRange(1, args.Count - 1)] : [];
 
-        return (commandName, cmdArgs);
+        return (commandName, cmdArgs, redirects);
     }
+
 
 }
